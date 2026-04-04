@@ -57,8 +57,6 @@ def test_add_client_empty_input(app_instance):
     app.cur.execute("SELECT * FROM clients")
     clients = app.cur.fetchall()
     assert len(clients) == 0
-
-
 # -----------------------------
 # Test 3: AI program generation
 # -----------------------------
