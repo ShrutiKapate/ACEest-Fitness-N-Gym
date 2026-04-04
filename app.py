@@ -208,6 +208,8 @@ class ACEestApp:
         if not name:
             return
         self.cur.execute("INSERT OR IGNORE INTO clients (name,membership_status) VALUES (?,?)",(name,"Active"))
+        self.cur.execute("ALTER TABLE clients ADD COLUMN membership_status TEXT")
+        self.cur.execute("ALTER TABLE clients ADD COLUMN membership_end TEXT")
         self.conn.commit()
         self.refresh_client_list()
         messagebox.showinfo("Saved", f"Client {name} saved")
@@ -298,7 +300,7 @@ class ACEestApp:
         columns = ("date","type","duration","notes")
         self.tree_workouts = ttk.Treeview(self.tab_workouts, columns=columns, show="headings")
         for c in columns:
-            self.tree_workouts.heading(c,c.title())
+            self.tree_workouts.heading(c, text=c.title())
             self.tree_workouts.column(c,width=150)
         self.tree_workouts.pack(fill="both",expand=True)
         ttk.Button(self.tab_workouts,text="Add Workout",command=self.add_workout).pack(pady=5)
