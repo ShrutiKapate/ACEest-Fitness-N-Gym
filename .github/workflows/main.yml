@@ -1,15 +1,8 @@
 # =========================================================================================
 # ACEest Fitness & Gym – Automated CI/CD Pipeline via GitHub Actions
 # Triggers: The pipeline must be triggered by every push or pull_request
-#
-# Jobs (in order):
-#   1. build-lint          – compile the application and check for syntax errors
-#   2. docker-assembly     – assemble the Docker container image
-#   3. auto-test           – execute the Pytest suite inside the containerized environment
 # =========================================================================================
-
 name: ACEest Fitness & Gym CI/CD Pipeline
-
 on:
   push:
     branches: [ "main" ]
@@ -20,10 +13,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-
   # ----------------------------------------------------------
-  # Job 1: Build & Lint
-  # Compile the application and check for syntax errors.
+  # Build & Lint -- Compile the application and check for syntax errors.
   # ----------------------------------------------------------
   build-lint:
     name: Build & Lint
@@ -55,10 +46,8 @@ jobs:
         timeout-minutes: 3
         run: xvfb-run pytest  test_app.py # xvfb-run creates the virtual $DISPLAY
 
-
   # ----------------------------------------------------------
-  # Job 2: Docker Image Assembly
-  # Build the Docker container image from Dockerfile.
+  # Docker Image Assembly -- Build the Docker container image from Dockerfile.
   # ----------------------------------------------------------
   docker-assembly:
     name: Docker Image Assembly
@@ -80,9 +69,7 @@ jobs:
         run: docker images aceest-fitness-gym
 
   # ----------------------------------------------------------
-  # Job 3: Automated Testing (inside the Docker container)
-  # Runs Pytest suite INSIDE the containerized environment
-  # to confirm stability, per assignment requirement.
+  # Automated Testing (inside the Docker container)
   # ----------------------------------------------------------
   auto-test:
     name: Automated Testing (Containerized)

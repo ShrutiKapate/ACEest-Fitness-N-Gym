@@ -1,6 +1,6 @@
 # ACEestFull.py
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import sqlite3
 from datetime import datetime, date
 import matplotlib.pyplot as plt
@@ -204,12 +204,11 @@ class ACEestApp:
         self.client_list["values"] = names
     
     def add_save_client(self):
-        name = tk.simpledialog.askstring("Client Name", "Enter client name:")
+        name = simpledialog.askstring("Client Name", "Enter client name:")
         if not name:
             return
         self.cur.execute("INSERT OR IGNORE INTO clients (name,membership_status) VALUES (?,?)",(name,"Active"))
         self.cur.execute("ALTER TABLE clients ADD COLUMN membership_status TEXT")
-        self.cur.execute("ALTER TABLE clients ADD COLUMN membership_end TEXT")
         self.conn.commit()
         self.refresh_client_list()
         messagebox.showinfo("Saved", f"Client {name} saved")
