@@ -53,7 +53,7 @@ jobs:
 
       - name: Run Test cases
         timeout-minutes: 3
-        run: xvfb-run pytest tests.py  # xvfb-run creates the virtual $DISPLAY
+        run: pytest  # xvfb-run creates the virtual $DISPLAY
 
 
   # ----------------------------------------------------------
