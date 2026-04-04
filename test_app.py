@@ -1,2 +1,2 @@
 def test_example():
-    assert 1 + 3 == 2
+    assert 1 + 2 == 3
