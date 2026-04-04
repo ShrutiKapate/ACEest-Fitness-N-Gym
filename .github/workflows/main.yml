@@ -101,7 +101,7 @@ jobs:
         run: |
           docker run --rm --init\
             aceest-fitness-gym:test \
-            xvfb-run python -m pytest tests.py
+            xvfb-run python -m pytest test_app.py
 
       - name: Upload test results (on failure)
         if: failure()
