@@ -1,34 +1,27 @@
-FROM python:3.10-slim
+# Use an official Python runtime as a parent image
+FROM python:3.11-slim
 
-# install system dependencies for tkinter
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      tk \
-      tcl \
-      libx11-6 \
-      && rm -rf /var/lib/apt/lists/*
+# Install system-level dependencies for Tkinter and a virtual display (Xvfb)
+# These are required because they are not included in the standard Python image
+RUN apt-get update && apt-get install -y \
+    python3-tk \
+    tcl-dev \
+    tk-dev \
+    libx11-dev \
+    xvfb \
+    x11-apps \
+    && rm -rf /var/lib/apt/lists/*
 
-# copy and install python deps
+# Set the working directory in the container
 WORKDIR /app
+
+# Copy the requirements file and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of your application code
 COPY . .
 
-CMD ["python", "app.py"]
-
-FROM jenkins/jenkins:lts
-
-FROM node:18
-WORKDIR /app
-COPY . .
-RUN npm install
-CMD ["npm", "start"]
-
-USER root
-
-# Install Jenkins plugins
-RUN jenkins-plugin-cli --plugins \
-    git \
-    docker-workflow \
-    junit \
-    warnings-ng
+# No CMD needed if you only use this for 'auto-test' in GitHub Actions.
+# If you want to run the app normally, use:
+# CMD ["xvfb-run", "python", "app.py"]
