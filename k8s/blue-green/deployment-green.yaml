@@ -1,0 +1,57 @@
+# ── Green Deployment (new version) ───────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-green
+  namespace: aceest
+  labels:
+    app: aceest
+    version: green
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: aceest
+      version: green
+  template:
+    metadata:
+      labels:
+        app: aceest
+        version: green
+    spec:
+      containers:
+        - name: aceest
+          image: yourdockerhubuser/aceest-fitness:IMAGE_TAG
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+---
+# ── Service (points to blue by default; switch selector to green to cut over) ─
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-service
+  namespace: aceest
+  annotations:
+    deployment-strategy: "blue-green"
+spec:
+  selector:
+    app: aceest
+    version: blue        # Jenkins patches this to 'green' after validation
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+  type: LoadBalancer
