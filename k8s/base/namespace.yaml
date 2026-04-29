@@ -4,4 +4,3 @@ metadata:
   name: aceest
   labels:
     app: aceest-fitness
-    managed-by: kubectl

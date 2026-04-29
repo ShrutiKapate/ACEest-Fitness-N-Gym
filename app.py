@@ -1,354 +1,138 @@
-# ACEestFull.py
-import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+"""ACEest Fitness & Gym - Flask web service."""
+import os
 import sqlite3
-from datetime import datetime, date
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from fpdf import FPDF
-import random
+from datetime import datetime
+from contextlib import contextmanager
+from flask import Flask, jsonify, request, render_template_string
 
-DB_NAME = "aceest_fitness.db"
+APP_VERSION = os.environ.get("APP_VERSION", "3.2.4")
+APP_VARIANT = os.environ.get("APP_VARIANT", "stable")
+DB_PATH = os.environ.get("DB_PATH", "aceest_fitness.db")
 
-# ---------- DATABASE INITIALIZATION ----------
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    
-    # Users (for role-based login)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY,
-        password TEXT,
-        role TEXT
-    )
-    """)
-    
-    # Clients
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS clients (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE,
-        age INTEGER,
-        height REAL,
-        weight REAL,
-        program TEXT,
-        calories INTEGER,
-        target_weight REAL,
-        target_adherence INTEGER,
-        membership_status TEXT,
-        membership_end TEXT
-    )
-    """)
-    
-    # Progress
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS progress (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        client_name TEXT,
-        week TEXT,
-        adherence INTEGER
-    )
-    """)
-    
-    # Workouts
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS workouts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        client_name TEXT,
-        date TEXT,
-        workout_type TEXT,
-        duration_min INTEGER,
-        notes TEXT
-    )
-    """)
-    
-    # Exercises
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS exercises (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        workout_id INTEGER,
-        name TEXT,
-        sets INTEGER,
-        reps INTEGER,
-        weight REAL
-    )
-    """)
-    
-    # Metrics
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS metrics (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        client_name TEXT,
-        date TEXT,
-        weight REAL,
-        waist REAL,
-        bodyfat REAL
-    )
-    """)
-    
-    # Add default admin if not exists
-    cur.execute("SELECT * FROM users WHERE username='admin'")
-    if not cur.fetchone():
-        cur.execute("INSERT INTO users VALUES ('admin','admin','Admin')")
-    
-    conn.commit()
-    conn.close()
+PROGRAMS = {
+    "Fat Loss":    {"factor": 22, "workout": "HIIT, Cardio, Strength"},
+    "Muscle Gain": {"factor": 35, "workout": "Push/Pull/Legs Split"},
+    "Beginner":    {"factor": 26, "workout": "Full Body, Mobility"},
+}
 
-# ---------- MAIN APPLICATION ----------
-class ACEestApp:
-    def __init__(self, root, db_path="aceest_fitness.db"):
-        self.db_path = db_path
-        self.root = root
-        self.root.title("ACEest Fitness & Performance")
-        self.root.geometry("1400x900")
-        self.root.configure(bg="#1a1a1a")
-        
-        self.conn = sqlite3.connect(DB_NAME)
-        self.cur = self.conn.cursor()
-        
-        self.current_user = None
-        self.current_client = None
-        
-        # Programs for AI-style generation
-        self.program_templates = {
-            "Fat Loss": ["Full Body HIIT", "Circuit Training", "Cardio + Weights"],
-            "Muscle Gain": ["Push/Pull/Legs", "Upper/Lower Split", "Full Body Strength"],
-            "Beginner": ["Full Body 3x/week", "Light Strength + Mobility"]
-        }
-        
-        self.login_screen()
-    
-    # ---------- LOGIN SCREEN ----------
-    def login_screen(self):
-        self.clear_root()
-        frame = tk.Frame(self.root, bg="#1a1a1a")
-        frame.pack(expand=True)
-        
-        tk.Label(frame, text="ACEest Login", font=("Arial", 24), fg="#d4af37", bg="#1a1a1a").pack(pady=20)
-        
-        tk.Label(frame, text="Username", fg="white", bg="#1a1a1a").pack(pady=5)
-        self.username_var = tk.StringVar()
-        tk.Entry(frame, textvariable=self.username_var, bg="#333", fg="white").pack()
-        
-        tk.Label(frame, text="Password", fg="white", bg="#1a1a1a").pack(pady=5)
-        self.password_var = tk.StringVar()
-        tk.Entry(frame, textvariable=self.password_var, show="*", bg="#333", fg="white").pack()
-        
-        ttk.Button(frame, text="Login", command=self.login).pack(pady=20)
-    
-    def login(self):
-        username = self.username_var.get().strip()
-        password = self.password_var.get().strip()
-        self.cur.execute("SELECT role FROM users WHERE username=? AND password=?", (username,password))
-        row = self.cur.fetchone()
-        if row:
-            self.current_user = username
-            self.current_role = row[0]
-            self.dashboard()
-        else:
-            messagebox.showerror("Login Failed", "Invalid credentials")
-    
-    # ---------- DASHBOARD ----------
-    def dashboard(self):
-        self.clear_root()
-        
-        # Header
-        header = tk.Label(self.root, text=f"ACEest Dashboard ({self.current_role})", font=("Arial", 24, "bold"), bg="#d4af37", fg="black", height=2)
-        header.pack(fill="x")
-        
-        # Left panel: Clients & program generator
-        left = tk.Frame(self.root, bg="#1a1a1a", width=350)
-        left.pack(side="left", fill="y", padx=10, pady=10)
-        
-        # Client selection
-        tk.Label(left, text="Select Client", bg="#1a1a1a", fg="white").pack(pady=(5,0))
-        self.client_list = ttk.Combobox(left, state="readonly")
-        self.client_list.pack()
-        self.client_list.bind("<<ComboboxSelected>>", self.load_client)
-        self.refresh_client_list()
-        
-        ttk.Button(left, text="Add / Save Client", command=self.add_save_client).pack(pady=5)
-        ttk.Button(left, text="Generate AI Program", command=self.generate_program).pack(pady=5)
-        ttk.Button(left, text="Generate PDF Report", command=self.generate_pdf).pack(pady=5)
-        
-        # Membership Billing
-        ttk.Button(left, text="Check Membership", command=self.check_membership).pack(pady=5)
-        
-        # Right panel: Notebook with charts and workouts
-        right = tk.Frame(self.root, bg="#1a1a1a")
-        right.pack(side="right", fill="both", expand=True, padx=10, pady=10)
-        
-        self.notebook = ttk.Notebook(right)
-        self.notebook.pack(fill="both", expand=True)
-        
-        # Tab1: Summary & charts
-        self.tab_summary = tk.Frame(self.notebook, bg="#1a1a1a")
-        self.notebook.add(self.tab_summary, text="Client Summary")
-        
-        self.summary_text = tk.Text(self.tab_summary, bg="#111", fg="white", font=("Consolas", 11))
-        self.summary_text.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Chart placeholder
-        self.chart_frame = tk.Frame(self.tab_summary, bg="#1a1a1a")
-        self.chart_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Tab2: Workouts & exercises
-        self.tab_workouts = tk.Frame(self.notebook, bg="#1a1a1a")
-        self.notebook.add(self.tab_workouts, text="Workouts & Exercises")
-        self.setup_workout_tab()
-    
-    # ---------- CLIENT MANAGEMENT ----------
-    def refresh_client_list(self):
-        self.cur.execute("SELECT name FROM clients ORDER BY name")
-        names = [row[0] for row in self.cur.fetchall()]
-        self.client_list["values"] = names
-    
-    def add_save_client(self):
-        name = simpledialog.askstring("Client Name", "Enter client name:")
-        if not name:
-            return
-        self.cur.execute("INSERT OR IGNORE INTO clients (name,membership_status) VALUES (?,?)",(name,"Active"))
-        self.cur.execute("ALTER TABLE clients ADD COLUMN membership_status TEXT")
-        self.conn.commit()
-        self.refresh_client_list()
-        messagebox.showinfo("Saved", f"Client {name} saved")
-    
-    def load_client(self, event=None):
-        name = self.client_list.get()
-        if not name:
-            return
-        self.current_client = name
-        self.refresh_summary()
-        self.refresh_workouts()
-        self.plot_charts()
-    
-    # ---------- AI-STYLE PROGRAM GENERATOR ----------
-    def generate_program(self):
-        if not self.current_client:
-            messagebox.showwarning("No Client", "Select a client first")
-            return
-        program_type = random.choice(list(self.program_templates.keys()))
-        program_detail = random.choice(self.program_templates[program_type])
-        self.cur.execute("UPDATE clients SET program=? WHERE name=?",(program_detail,self.current_client))
-        self.conn.commit()
-        messagebox.showinfo("Program Generated", f"Program for {self.current_client}: {program_detail}")
-        self.refresh_summary()
-    
-    # ---------- PDF REPORT ----------
-    def generate_pdf(self):
-        if not self.current_client:
-            messagebox.showwarning("No Client", "Select a client first")
-            return
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial","B",16)
-        pdf.cell(0,10,f"ACEest Client Report - {self.current_client}",ln=True)
-        self.cur.execute("SELECT * FROM clients WHERE name=?",(self.current_client,))
-        client = self.cur.fetchone()
-        pdf.set_font("Arial","",12)
-        for i,col in enumerate(["ID","Name","Age","Height","Weight","Program","Calories","Target Weight","Target Adherence","Membership","End"]):
-            pdf.cell(0,10,f"{col}: {client[i]}",ln=True)
-        pdf.output(f"{self.current_client}_report.pdf")
-        messagebox.showinfo("PDF Generated", f"{self.current_client}_report.pdf created")
-    
-    # ---------- MEMBERSHIP ----------
-    def check_membership(self):
-        if not self.current_client:
-            return
-        self.cur.execute("SELECT membership_status,membership_end FROM clients WHERE name=?",(self.current_client,))
-        status,end = self.cur.fetchone()
-        msg = f"Membership: {status}\nRenewal Date: {end if end else 'N/A'}"
-        messagebox.showinfo("Membership", msg)
-    
-    # ---------- SUMMARY & CHARTS ----------
-    def refresh_summary(self):
-        if not self.current_client:
-            return
-        self.cur.execute("SELECT * FROM clients WHERE name=?",(self.current_client,))
-        client = self.cur.fetchone()
-        text = f"Name: {client[1]}\nProgram: {client[5]}\nCalories: {client[6]}\nMembership: {client[9]}"
-        self.summary_text.configure(state="normal")
-        self.summary_text.delete("1.0","end")
-        self.summary_text.insert("end",text)
-        self.summary_text.configure(state="disabled")
-    
-    def plot_charts(self):
-        for widget in self.chart_frame.winfo_children():
-            widget.destroy()
-        if not self.current_client:
-            return
-        self.cur.execute("SELECT week, adherence FROM progress WHERE client_name=? ORDER BY id",(self.current_client,))
-        data = self.cur.fetchall()
-        if not data:
-            return
-        weeks = [d[0] for d in data]
-        adherence = [d[1] for d in data]
-        fig, ax = plt.subplots(figsize=(6,3))
-        ax.plot(weeks,adherence,marker="o")
-        ax.set_title("Weekly Adherence")
-        ax.set_ylabel("%")
-        ax.set_ylim(0,100)
-        ax.grid(True)
-        canvas = FigureCanvasTkAgg(fig,self.chart_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill="both",expand=True)
-    
-    # ---------- WORKOUT + EXERCISE TAB ----------
-    def setup_workout_tab(self):
-        # Treeview
-        columns = ("date","type","duration","notes")
-        self.tree_workouts = ttk.Treeview(self.tab_workouts, columns=columns, show="headings")
-        for c in columns:
-            self.tree_workouts.heading(c, text=c.title())
-            self.tree_workouts.column(c,width=150)
-        self.tree_workouts.pack(fill="both",expand=True)
-        ttk.Button(self.tab_workouts,text="Add Workout",command=self.add_workout).pack(pady=5)
-    
-    def refresh_workouts(self):
-        for row in self.tree_workouts.get_children():
-            self.tree_workouts.delete(row)
-        if not self.current_client:
-            return
-        self.cur.execute("SELECT date,workout_type,duration_min,notes FROM workouts WHERE client_name=? ORDER BY date DESC",(self.current_client,))
-        rows = self.cur.fetchall()
-        for r in rows:
-            self.tree_workouts.insert("", "end", values=r)
-    
-    def add_workout(self):
-        if not self.current_client:
-            return
-        win = tk.Toplevel(self.root)
-        win.title(f"Add Workout - {self.current_client}")
-        win.geometry("400x400")
-        tk.Label(win,text="Date (YYYY-MM-DD)").pack()
-        date_var = tk.StringVar(value=date.today().isoformat())
-        tk.Entry(win,textvariable=date_var).pack()
-        tk.Label(win,text="Type").pack()
-        type_var = tk.StringVar()
-        ttk.Combobox(win,textvariable=type_var,values=["Strength","Hypertrophy","Cardio","Mobility"],state="readonly").pack()
-        tk.Label(win,text="Duration (min)").pack()
-        dur_var = tk.IntVar(value=60)
-        tk.Entry(win,textvariable=dur_var).pack()
-        tk.Label(win,text="Notes").pack()
-        notes_var = tk.StringVar()
-        tk.Entry(win,textvariable=notes_var).pack()
-        def save():
-            self.cur.execute("INSERT INTO workouts (client_name,date,workout_type,duration_min,notes) VALUES (?,?,?,?,?)",
-                             (self.current_client,date_var.get(),type_var.get(),dur_var.get(),notes_var.get()))
-            self.conn.commit()
-            self.refresh_workouts()
-            win.destroy()
-        ttk.Button(win,text="Save",command=save).pack(pady=10)
-    
-    # ---------- UTILITY ----------
-    def clear_root(self):
-        for widget in self.root.winfo_children():
-            widget.destroy()
 
-# ---------- RUN ----------
+def calculate_calories(weight_kg, program):
+    if weight_kg is None or weight_kg <= 0:
+        raise ValueError("weight must be positive")
+    if program not in PROGRAMS:
+        raise ValueError("unknown program: " + str(program))
+    return int(weight_kg * PROGRAMS[program]["factor"])
+
+
+def calculate_bmi(weight_kg, height_cm):
+    if weight_kg <= 0 or height_cm <= 0:
+        raise ValueError("weight and height must be positive")
+    h = height_cm / 100.0
+    return round(weight_kg / (h * h), 2)
+
+
+@contextmanager
+def get_conn(db_path=None):
+    conn = sqlite3.connect(db_path or DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_db(db_path=None):
+    with get_conn(db_path) as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            age INTEGER, height REAL, weight REAL,
+            program TEXT, calories INTEGER,
+            created TEXT NOT NULL)""")
+
+
+def create_app(db_path=None):
+    app = Flask(__name__)
+    app.config["DB_PATH"] = db_path or DB_PATH
+    init_db(app.config["DB_PATH"])
+
+    @app.route("/")
+    def home():
+        with get_conn(app.config["DB_PATH"]) as conn:
+            rows = conn.execute("SELECT name, age, weight, program, calories FROM clients").fetchall()
+        return render_template_string(
+            "<h1 style=color:#d4af37>ACEest Fitness & Gym v{{v}} ({{var}})</h1>"
+            "<p>Endpoints: /health /version /api/clients /api/programs</p>"
+            "<table border=1 cellpadding=6>"
+            "<tr><th>Name</th><th>Age</th><th>Weight</th><th>Program</th><th>Calories</th></tr>"
+            "{% for r in rows %}<tr><td>{{r.name}}</td><td>{{r.age}}</td>"
+            "<td>{{r.weight}}</td><td>{{r.program}}</td><td>{{r.calories}}</td></tr>{% endfor %}"
+            "</table>", v=APP_VERSION, var=APP_VARIANT, rows=rows)
+
+    @app.route("/health")
+    def health():
+        return jsonify(status="ok", version=APP_VERSION, variant=APP_VARIANT)
+
+    @app.route("/version")
+    def version():
+        return jsonify(version=APP_VERSION, variant=APP_VARIANT)
+
+    @app.route("/api/programs")
+    def api_programs():
+        return jsonify(PROGRAMS)
+
+    @app.route("/api/clients", methods=["GET"])
+    def api_list_clients():
+        with get_conn(app.config["DB_PATH"]) as conn:
+            rows = conn.execute("SELECT * FROM clients").fetchall()
+        return jsonify([dict(r) for r in rows])
+
+    @app.route("/api/clients", methods=["POST"])
+    def api_create_client():
+        data = request.get_json(silent=True) or {}
+        try:
+            name = str(data["name"]).strip()
+            age = int(data["age"])
+            weight = float(data["weight"])
+            program = data["program"]
+            height = float(data["height"]) if data.get("height") else None
+            calories = calculate_calories(weight, program)
+        except (KeyError, ValueError, TypeError) as e:
+            return jsonify(error=str(e)), 400
+        with get_conn(app.config["DB_PATH"]) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO clients "
+                "(name, age, height, weight, program, calories, created) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (name, age, height, weight, program, calories,
+                 datetime.utcnow().isoformat(timespec="seconds")))
+        return jsonify(name=name, calories=calories, program=program), 201
+
+    @app.route("/api/calories", methods=["POST"])
+    def api_calories():
+        data = request.get_json(silent=True) or {}
+        try:
+            kcal = calculate_calories(float(data["weight"]), data["program"])
+        except (KeyError, ValueError, TypeError) as e:
+            return jsonify(error=str(e)), 400
+        return jsonify(calories=kcal)
+
+    @app.route("/api/bmi", methods=["POST"])
+    def api_bmi():
+        data = request.get_json(silent=True) or {}
+        try:
+            bmi = calculate_bmi(float(data["weight"]), float(data["height"]))
+        except (KeyError, ValueError, TypeError) as e:
+            return jsonify(error=str(e)), 400
+        return jsonify(bmi=bmi)
+
+    return app
+
+
+app = create_app()
+
+
 if __name__ == "__main__":
-    init_db()
-    root = tk.Tk()
-    app = ACEestApp(root)
-    root.mainloop()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

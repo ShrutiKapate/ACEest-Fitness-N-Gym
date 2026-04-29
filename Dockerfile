@@ -1,27 +1,19 @@
-# Use an official Python runtime as a parent image
 FROM python:3.11-slim
 
-# Install system-level dependencies for Tkinter and a virtual display (Xvfb)
-# These are required because they are not included in the standard Python image
-RUN apt-get update && apt-get install -y \
-    python3-tk \
-    tcl-dev \
-    tk-dev \
-    libx11-dev \
-    xvfb \
-    x11-apps \
-    && rm -rf /var/lib/apt/lists/*
+ARG APP_VERSION=3.2.4
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_VERSION=${APP_VERSION} \
+    APP_VARIANT=stable \
+    PORT=5000
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application code
-COPY . .
+COPY app.py .
 
-# No CMD needed if you only use this for 'auto-test' in GitHub Actions.
-# If you want to run the app normally, use:
-# CMD ["xvfb-run", "python", "app.py"]
+EXPOSE 5000
+
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "app:app"]

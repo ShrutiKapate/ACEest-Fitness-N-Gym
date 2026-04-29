@@ -1,112 +1,74 @@
+"""Pytest suite for ACEest Fitness Flask app."""
 import pytest
-import sqlite3
-import tkinter as tk
-from unittest.mock import patch
-from app import ACEestApp  # Make sure your app file is named app.py
+from app import create_app, calculate_calories, calculate_bmi
 
-# -----------------------------
-# Fixture: initialize app instance
-# -----------------------------
+
 @pytest.fixture
-def app_instance(tmp_path):
-    """
-    Create a fresh ACEestApp instance with a temporary SQLite DB for testing.
-    """
-    db_file = tmp_path / "test_clients.db"
-
-    root = tk.Tk()
-    root.withdraw()  # Hide the main Tkinter window
-
-    app = ACEestApp(root, db_path=str(db_file))  # Pass temp DB path
-    yield app, root
-
-    # Cleanup
-    root.destroy()
+def client(tmp_path):
+    db = tmp_path / "test.db"
+    app = create_app(db_path=str(db))
+    app.config["TESTING"] = True
+    return app.test_client()
 
 
-# -----------------------------
-# Test 1: Add client logic
-# -----------------------------
-def test_add_client_logic(app_instance):
-    """
-    Test adding a new client with mocked simpledialog input.
-    """
-    app, _ = app_instance
-
-    # Mock simpledialog.askstring to return a test client name
-    with patch("app.simpledialog.askstring", return_value="Iron Man"):
-        app.add_save_client()
-
-    # Verify client was inserted into the DB
-    app.cur.execute("SELECT name, membership_status FROM clients WHERE name=?", ("Iron Man",))
-    client = app.cur.fetchone()
-    assert client is not None
-    assert client["name"] == "Iron Man"
-    assert client["membership_status"] == "Active"
+def test_calories_fat_loss():
+    assert calculate_calories(70, "Fat Loss") == 70 * 22
 
 
-# -----------------------------
-# Test 2: Prevent adding empty client
-# -----------------------------
-def test_add_client_empty_input(app_instance):
-    app, _ = app_instance
-    with patch("app.simpledialog.askstring", return_value=None):
-        app.add_save_client()
-
-    # DB should still be empty
-    app.cur.execute("SELECT * FROM clients")
-    clients = app.cur.fetchall()
-    assert len(clients) == 0
-# -----------------------------
-# Test 3: AI program generation
-# -----------------------------
-def test_ai_program_generation(app_instance):
-    app, _ = app_instance
-
-    # Add a test client first
-    app.cur.execute(
-        "INSERT INTO clients (name, membership_status) VALUES (?, ?)",
-        ("Tony Stark", "Active")
-    )
-    app.conn.commit()
-    app.current_client = "Tony Stark"
-
-    # Generate program
-    app.generate_program()
-
-    # Verify program column is populated
-    app.cur.execute("SELECT program FROM clients WHERE name=?", ("Tony Stark",))
-    program = app.cur.fetchone()["program"]
-    assert program is not None
-    assert len(program) > 0
+def test_calories_muscle_gain():
+    assert calculate_calories(80, "Muscle Gain") == 80 * 35
 
 
-# -----------------------------
-# Test 4: Refresh summary
-# -----------------------------
-def test_refresh_summary(app_instance):
-    app, _ = app_instance
-
-    # Add a client
-    app.cur.execute(
-        "INSERT INTO clients (name, membership_status, calories, program) VALUES (?, ?, ?, ?)",
-        ("Bruce Banner", "Active", 500, "Strength Program")
-    )
-    app.conn.commit()
-    app.current_client = "Bruce Banner"
-
-    # Refresh summary (should not raise errors)
-    app.refresh_summary()
+def test_calories_unknown_program():
+    with pytest.raises(ValueError):
+        calculate_calories(70, "Yoga")
 
 
-# -----------------------------
-# Test 5: Database integrity
-# -----------------------------
-def test_database_integrity(app_instance):
-    app, _ = app_instance
-    # Ensure columns exist
-    app.cur.execute("PRAGMA table_info(clients)")
-    columns = [col["name"] for col in app.cur.fetchall()]
-    expected_columns = ["id", "name", "membership_status", "membership_end", "program", "calories"]
-    for col in expected_columns:
-        assert col in columns
+def test_calories_negative_weight():
+    with pytest.raises(ValueError):
+        calculate_calories(-5, "Beginner")
+
+
+def test_bmi_normal():
+    assert calculate_bmi(70, 175) == pytest.approx(22.86, abs=0.01)
+
+
+def test_health_endpoint(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "ok"
+
+
+def test_version_endpoint(client):
+    r = client.get("/version")
+    assert r.status_code == 200
+
+
+def test_programs_endpoint(client):
+    r = client.get("/api/programs")
+    assert r.status_code == 200
+    assert "Fat Loss" in r.get_json()
+
+
+def test_create_client(client):
+    r = client.post("/api/clients", json={
+        "name": "Ravi", "age": 28, "weight": 75, "program": "Fat Loss"
+    })
+    assert r.status_code == 201
+    assert r.get_json()["calories"] == 75 * 22
+
+
+def test_create_client_bad_payload(client):
+    r = client.post("/api/clients", json={"name": "Ravi"})
+    assert r.status_code == 400
+
+
+def test_calories_endpoint(client):
+    r = client.post("/api/calories", json={"weight": 70, "program": "Fat Loss"})
+    assert r.status_code == 200
+    assert r.get_json()["calories"] == 1540
+
+
+def test_bmi_endpoint(client):
+    r = client.post("/api/bmi", json={"weight": 70, "height": 175})
+    assert r.status_code == 200
