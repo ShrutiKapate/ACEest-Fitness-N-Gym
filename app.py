@@ -97,7 +97,8 @@ def init_db():
 
 # ---------- MAIN APPLICATION ----------
 class ACEestApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root, db_path="aceest_fitness.db"):
+        self.db_path = db_path
         self.root = root
         self.root.title("ACEest Fitness & Performance")
         self.root.geometry("1400x900")
