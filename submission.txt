@@ -1,0 +1,50 @@
+ACEest Fitness & Gym - Assignment 2 Submission
+================================================
+
+Student:  Shruti Kapate
+Course:   Introduction to DevOps (CSIZG514 / SEZG514)
+
+GitHub Repository:
+  https://github.com/ShrutiKapate/ACEest-Fitness-N-Gym
+
+Docker Hub Repository (versions 3.2.4 and latest):
+  https://hub.docker.com/r/shrutikapate/aceest-fitness
+
+Live Cluster Endpoint (publicly reachable via ngrok):
+  https://spring-plating-prelaw.ngrok-free.dev
+
+Sample endpoints (all confirmed working):
+  GET /              - HTML home page with version badge
+  GET /health        - Liveness probe (returns JSON)
+  GET /version       - Version + variant info
+  GET /api/programs  - Available training programs
+  GET /api/clients   - List of clients
+
+Note for first-time browser visitors: ngrok displays a one-time
+"Visit Site" warning page; click through to access the app.
+CLI tools (curl, wget) are unaffected.
+
+Deployment Strategy currently exposed publicly:
+  Rolling Update - 3 replicas, maxSurge=1, maxUnavailable=0,
+                   zero-downtime rolling updates, automatic
+                   rollback via kubectl rollout undo.
+
+All five required deployment strategies are deployed simultaneously
+on the same Minikube cluster, each in a dedicated namespace:
+
+  Strategy        Namespace          NodePort  Pods Running
+  --------------- ------------------ --------- -----------------------
+  Rolling Update  aceest-rolling     30081     3 stable
+  Blue-Green      aceest-bluegreen   30082     2 blue + 2 green
+  Canary          aceest-canary      30083     4 stable + 1 canary (80/20)
+  A/B Testing     aceest-ab          30084     2 variant-A + 2 variant-B
+  Shadow          aceest-shadow      30085     2 primary + 1 shadow
+
+Due to the ngrok free-tier single-tunnel limitation, only the
+rolling-update strategy has a public URL at submission time. All
+five strategies' manifests are in k8s/ in the GitHub repo and are
+documented in detail in the project report (docs/REPORT.docx).
+
+CI/CD Pipeline:     Jenkinsfile (declarative, 11 stages)
+Static Analysis:    sonar-project.properties (SonarQube)
+Unit Tests:         12 tests via pytest (all passing)

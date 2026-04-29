@@ -1,0 +1,18 @@
+ACEest Fitness & Gym - Submission Endpoints
+============================================
+GitHub:     https://github.com/ShrutiKapate/ACEest-Fitness-N-Gym
+Docker Hub: https://hub.docker.com/r/shrutikapate/aceest-fitness
+
+Live cluster endpoints (Minikube IP: 192.168.49.2):
+  Rolling Update:  http://192.168.49.2:30081/
+  Blue-Green:      http://192.168.49.2:30082/
+  Canary:          http://192.168.49.2:30083/
+  A/B Testing:     http://192.168.49.2:30084/
+  Shadow:          http://192.168.49.2:30085/
+
+Each endpoint exposes:
+  GET /            HTML home page with version badge
+  GET /health      Liveness/readiness probe
+  GET /version     Version + variant info
+  GET /api/clients List of all clients
+  GET /api/programs Available training programs
